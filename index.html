@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f7f7f4">
+  <title>AutoTyper — remote typing queue</title>
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Resolve the theme before the first paint so nothing flashes.
+    (() => {
+      let mode = 'system';
+      try { mode = localStorage.getItem('autotyper.theme') || 'system'; } catch { /* ignore */ }
+      const dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+      const root = document.documentElement;
+      root.dataset.theme = dark ? 'dark' : 'light';
+      root.dataset.themeMode = mode;
+    })();
+  </script>
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true">
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M4 13a8 8 0 1 1 2.3 5.7"/><path d="M4 20v-7h7"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 9v5M12 17h.01"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-8 8"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  </svg>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"><svg class="icon"><use href="#i-bolt"/></svg></span>
+      <span class="brand-name">AutoTyper</span>
+      <span class="brand-sub">remote typing queue</span>
+    </div>
+
+    <div class="topbar-right">
+      <button id="projectChip" class="chip-project" type="button" title="Change the Supabase project">
+        <span class="status-dot" id="projectDot"></span>
+        <span id="projectName">no project</span>
+      </button>
+      <span id="userEmail" class="who-email"></span>
+      <button id="themeToggle" class="icon-btn" type="button" title="Theme: system">
+        <svg class="icon" id="themeIcon"><use href="#i-monitor"/></svg>
+      </button>
+      <button id="settingsBtn" class="btn ghost small hidden" type="button">Server</button>
+      <button id="signOutBtn" class="btn ghost small hidden" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- Health / first-run hints -->
+    <section id="schemaBanner" class="banner hidden" role="status"></section>
+
+    <!-- 1. Server setup -->
+    <section id="setupView" class="view hidden">
+      <div class="card card-narrow">
+        <h1>Connect a Supabase project</h1>
+        <p class="muted">
+          Copy the project URL and the <strong>anon / publishable</strong> key from
+          Supabase → Project Settings → API. Row level security keeps every account's
+          tasks private, so the key is safe in a browser. Never paste the
+          <code>service_role</code> key here.
+        </p>
+        <label class="field">Project URL
+          <input id="setupUrl" type="url" placeholder="https://your-project-ref.supabase.co" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="field">Anon / publishable key
+          <input id="setupKey" type="password" placeholder="eyJhbGciOi… or sb_publishable_…" autocomplete="off">
+        </label>
+        <div class="row">
+          <button id="setupSave" class="btn primary" type="button">Save and continue</button>
+          <button id="setupCancel" class="btn ghost hidden" type="button">Cancel</button>
+        </div>
+        <p class="muted tiny">Stored in this browser only, and used by the desktop app too.</p>
+      </div>
+    </section>
+
+    <!-- 2. Sign in / create account -->
+    <section id="authView" class="view hidden">
+      <div class="card card-narrow">
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="signin" role="tab" type="button">Sign in</button>
+          <button class="tab" data-tab="signup" role="tab" type="button">Create account</button>
+        </div>
+        <form id="authForm" autocomplete="on">
+          <label class="field">E-mail
+            <input id="authEmail" type="email" required autocomplete="username" spellcheck="false" placeholder="you@example.com">
+          </label>
+          <label class="field">Password
+            <input id="authPassword" type="password" required autocomplete="current-password" placeholder="••••••••">
+          </label>
+          <button class="btn primary block" type="submit" id="authSubmit">Sign in</button>
+        </form>
+        <p class="muted tiny" id="authHint">
+          Each account gets its own queue. The desktop app signs in with the same
+          e-mail and password.
+        </p>
+      </div>
+    </section>
+
+    <!-- 3. Dashboard -->
+    <section id="appView" class="view hidden">
+      <div class="dashboard">
+        <aside class="rail">
+          <div class="card composer">
+            <div class="card-head">
+              <h2>New task</h2>
+              <span class="muted tiny">Ctrl + Enter queues it</span>
+            </div>
+            <textarea id="taskText" rows="9" spellcheck="false"
+              placeholder="Paste the text the desktop app should type into the focused window…"></textarea>
+            <div class="composer-foot">
+              <span class="muted tiny" id="charCount">0 characters</span>
+              <span class="muted tiny" id="estimate"></span>
+            </div>
+            <button id="queueBtn" class="btn primary block" type="button">
+              <svg class="icon"><use href="#i-plus"/></svg>
+              <span id="queueBtnLabel">Add to queue</span>
+            </button>
+          </div>
+
+          <div class="stats" id="stats"></div>
+
+          <div class="card note">
+            <div class="row gap">
+              <svg class="icon muted"><use href="#i-keyboard"/></svg>
+              <div>
+                <strong>While it types</strong>
+                <p class="muted tiny">F8 pauses, F9 aborts, and the text only lands in the
+                  window that has focus. Keep it in front.</p>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <section class="card queue">
+          <div class="card-head wrap">
+            <h2>Queue</h2>
+            <div class="row gap">
+              <div class="filters" id="filters" role="group" aria-label="Filter tasks">
+                <button class="filter active" data-filter="all" type="button" aria-pressed="true">All</button>
+                <button class="filter" data-filter="queued" type="button" aria-pressed="false">Queued</button>
+                <button class="filter" data-filter="in_progress" type="button" aria-pressed="false">Typing</button>
+                <button class="filter" data-filter="completed" type="button" aria-pressed="false">Done</button>
+                <button class="filter" data-filter="failed" type="button" aria-pressed="false">Failed</button>
+              </div>
+              <label class="switch" title="Poll the server every 4 seconds">
+                <input type="checkbox" id="autoRefresh" checked> auto
+              </label>
+              <button id="refreshBtn" class="icon-btn" type="button" title="Refresh now">
+                <svg class="icon"><use href="#i-refresh"/></svg>
+              </button>
+              <button id="clearFinishedBtn" class="btn ghost small danger" type="button">Clear finished</button>
+            </div>
+          </div>
+          <div id="liveBanner" class="live hidden"></div>
+          <div id="taskList" class="tasks"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
